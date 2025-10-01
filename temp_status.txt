@@ -1,4 +1,0 @@
- M .gitignore
-?? QuickUpdate.bat
-?? UPDATE_WORKFLOW.md
-?? temp_status.txt
