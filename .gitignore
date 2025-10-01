@@ -95,9 +95,6 @@ Backup/
 *.tmp
 *.temp
 *~
-PreBuildBackup.bat
-PostBuildRestore.bat
-CleanUpdateFiles.bat
 
 # IDE files
 .vscode/settings.json
