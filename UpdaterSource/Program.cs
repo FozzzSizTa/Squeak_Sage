@@ -25,7 +25,12 @@ namespace GameUpdater
         {
             "GameUpdater.exe",
             "GameUpdater.pdb",
-            "UpdaterSource"
+            "UpdaterSource",
+            ".git",
+            ".gitignore",
+            ".gitattributes",
+            "Backup",
+            "CleanUpdateFiles.bat"
         };
 
         private static readonly object consoleLock = new object();
@@ -395,18 +400,49 @@ namespace GameUpdater
             string fileName = Path.GetFileName(filePath);
             string relativePath = Path.GetRelativePath(AppDomain.CurrentDomain.BaseDirectory, filePath);
             
-            return PROTECTED_FILES.Any(protectedFile => 
+            // 基本保護檔案檢查
+            if (PROTECTED_FILES.Any(protectedFile => 
                 fileName.Equals(protectedFile, StringComparison.OrdinalIgnoreCase) ||
-                relativePath.StartsWith(protectedFile, StringComparison.OrdinalIgnoreCase));
+                relativePath.StartsWith(protectedFile, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+            
+            // 額外保護Git相關檔案和隱藏檔案
+            if (relativePath.StartsWith(".git", StringComparison.OrdinalIgnoreCase) ||
+                fileName.StartsWith(".", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.Contains("\\.git\\", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.Contains("/.git/", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            
+            return false;
         }
 
         private static bool IsProtectedSourceFile(string filePath, string sourcePath)
         {
             string relativePath = Path.GetRelativePath(sourcePath, filePath);
+            string fileName = Path.GetFileName(filePath);
             
             // 保護更新器相關檔案
-            return PROTECTED_FILES.Any(protectedFile => 
-                relativePath.StartsWith(protectedFile, StringComparison.OrdinalIgnoreCase));
+            if (PROTECTED_FILES.Any(protectedFile => 
+                relativePath.StartsWith(protectedFile, StringComparison.OrdinalIgnoreCase) ||
+                fileName.Equals(protectedFile, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+            
+            // 額外保護Git相關檔案和隱藏檔案
+            if (relativePath.StartsWith(".git", StringComparison.OrdinalIgnoreCase) ||
+                fileName.StartsWith(".", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.Contains("\\.git\\", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.Contains("/.git/", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            
+            return false;
         }
 
         private static void WriteProgress(int percentage, string message)
