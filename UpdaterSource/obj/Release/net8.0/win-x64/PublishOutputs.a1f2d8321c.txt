@@ -1,2 +1,0 @@
-D:\Unity\SS\UpdaterSource\bin\Release\net8.0\win-x64\publish\GameUpdater.pdb
-D:\Unity\SS\UpdaterSource\bin\Release\net8.0\win-x64\publish\GameUpdater.exe
