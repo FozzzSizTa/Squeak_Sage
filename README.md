@@ -1,3 +1,3 @@
 # Squeak_Sage
 
-    version:(Ver-0.3.17)
+    version:(Ver-1.0.0)
