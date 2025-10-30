@@ -1,0 +1,44 @@
+Mono path[0] = 'C:/Users/ben09/Downloads/AIAgent/AI Agent_Data/Managed'
+Mono config path = 'C:/Users/ben09/Downloads/AIAgent/MonoBleedingEdge/etc'
+[Physics::Module] Initialized MultithreadedJobDispatcher with 11 workers.
+Initialize engine version: 2022.3.20f1 (61c2feb0970d)
+[Subsystems] Discovering subsystems at path C:/Users/ben09/Downloads/AIAgent/AI Agent_Data/UnitySubsystems
+GfxDevice: creating device client; threaded=1; jobified=0
+Direct3D:
+    Version:  Direct3D 11.0 [level 11.1]
+    Renderer: NVIDIA GeForce RTX 4060 Laptop GPU (ID=0x28a0)
+    Vendor:   NVIDIA
+    VRAM:     7957 MB
+    Driver:   32.0.15.7680
+Begin MonoManager ReloadAssembly
+- Loaded All Assemblies, in  0.097 seconds
+- Finished resetting the current domain, in  0.001 seconds
+<RI> Initializing input.
+<RI> Input initialized.
+<RI> Initialized touch support.
+UnloadTime: 0.930100 ms
+Registered Communicator in Agent.
+結束地圖檔案不存在: Assets/finishmap.txt
+Player died! Restarting scene for AI Training.
+重新載入場景進行AI訓練
+Unloading 5 Unused Serialized files (Serialized files now loaded: 0)
+UnloadTime: 8.466600 ms
+Unloading 3 unused Assets to reduce memory usage. Loaded Objects now: 2871.
+Total: 1.482000 ms (FindLiveObjects: 0.125900 ms CreateObjectMapping: 0.033900 ms MarkObjects: 1.312400 ms  DeleteObjects: 0.009700 ms)
+
+結束地圖檔案不存在: Assets/finishmap.txt
+Player died! Restarting scene for AI Training.
+重新載入場景進行AI訓練
+Player died! Restarting scene for AI Training.
+重新載入場景進行AI訓練
+Unloading 4 Unused Serialized files (Serialized files now loaded: 0)
+UnloadTime: 3.037200 ms
+Unloading 2 unused Assets to reduce memory usage. Loaded Objects now: 2871.
+Total: 0.919300 ms (FindLiveObjects: 0.099200 ms CreateObjectMapping: 0.033200 ms MarkObjects: 0.778100 ms  DeleteObjects: 0.008800 ms)
+
+Unloading 3 Unused Serialized files (Serialized files now loaded: 0)
+UnloadTime: 0.457900 ms
+Unloading 1 unused Assets to reduce memory usage. Loaded Objects now: 2871.
+Total: 0.827900 ms (FindLiveObjects: 0.101400 ms CreateObjectMapping: 0.061200 ms MarkObjects: 0.658700 ms  DeleteObjects: 0.006400 ms)
+
+結束地圖檔案不存在: Assets/finishmap.txt
