@@ -1,0 +1,42 @@
+{
+    "name": "root",
+    "metadata": {
+        "timer_format_version": "0.1.0",
+        "start_time_seconds": "1763013916",
+        "python_version": "3.9.22 | packaged by conda-forge | (main, Apr 14 2025, 23:26:18) [MSC v.1929 64 bit (AMD64)]",
+        "command_line_arguments": "D:\\Anaconda\\envs\\mlagent_env\\Scripts\\mlagents-learn D:\\Unity\\ML-agent\\config\\AI.yaml --run-id=run95250 --env=D:\\Unity\\ML-agent\\AI Agent.exe --width 1920 --height 1080 --env-args -screen-fullscreen 1 -screen-width 1920 -screen-height 1080",
+        "mlagents_version": "0.30.0",
+        "mlagents_envs_version": "0.30.0",
+        "communication_protocol_version": "1.5.0",
+        "pytorch_version": "2.8.0+cpu",
+        "numpy_version": "1.21.2",
+        "end_time_seconds": "1763013918"
+    },
+    "total": 2.7413573,
+    "count": 1,
+    "self": 0.006930400000000336,
+    "children": {
+        "run_training.setup": {
+            "total": 0.11883670000000013,
+            "count": 1,
+            "self": 0.11883670000000013
+        },
+        "TrainerController.start_learning": {
+            "total": 2.6155901999999998,
+            "count": 1,
+            "self": 8.429999999881588e-05,
+            "children": {
+                "TrainerController._reset_env": {
+                    "total": 2.6154893000000006,
+                    "count": 1,
+                    "self": 2.6154893000000006
+                },
+                "TrainerController._save_models": {
+                    "total": 1.6600000000366322e-05,
+                    "count": 1,
+                    "self": 1.6600000000366322e-05
+                }
+            }
+        }
+    }
+}

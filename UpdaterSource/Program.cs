@@ -16,7 +16,9 @@ namespace GameUpdater
         private static readonly string LOCAL_README_PATH = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "README.md");
         private static readonly string GITHUB_README_URL = "https://raw.githubusercontent.com/FozzzSizTa/Squeak_Sage/main/README.md";
         private static readonly string GITHUB_RELEASE_URL = "https://github.com/FozzzSizTa/Squeak_Sage/archive/refs/heads/main.zip";
+    private static readonly string REPO_GIT_URL = "https://github.com/FozzzSizTa/Squeak_Sage.git";
         private static readonly string TEMP_DOWNLOAD_PATH = Path.Combine(Path.GetTempPath(), "SquealSaga_Update");
+    private static readonly object lfsLock = new object();
         private static readonly string BACKUP_PATH = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backup");
         private static readonly HttpClient httpClient = new HttpClient();
         
@@ -55,7 +57,7 @@ namespace GameUpdater
                 {
                     Console.WriteLine("無法讀取版本資訊，請檢查網路連線或檔案是否存在。");
                     Console.WriteLine("按任意鍵退出...");
-                    Console.ReadKey();
+                    SafeReadKey();
                     return;
                 }
 
@@ -68,7 +70,7 @@ namespace GameUpdater
                     Console.WriteLine("發現新版本！");
                     Console.WriteLine($"是否要更新到版本 {remoteVersion}？(Y/N)");
                     
-                    var key = Console.ReadKey(true);
+                    var key = SafeReadKey(true);
                     if (key.Key == ConsoleKey.Y)
                     {
                         await PerformUpdate(remoteVersion);
@@ -81,11 +83,39 @@ namespace GameUpdater
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"更新過程中發生錯誤: {ex.Message}");
+                // 輸出完整例外以利除錯
+                Console.WriteLine($"更新過程中發生錯誤: {ex}");
             }
 
             Console.WriteLine("按任意鍵退出...");
-            Console.ReadKey();
+            SafeReadKey();
+        }
+
+        // 安全讀取按鍵：若輸入被重新導向 (stdin 被 pipe)，改用 Console.In 讀取第一個字元
+        private static ConsoleKeyInfo SafeReadKey(bool intercept = false)
+        {
+            try
+            {
+                if (Console.IsInputRedirected)
+                {
+                    int ch = Console.In.Read();
+                    if (ch == -1)
+                        return new ConsoleKeyInfo('\0', ConsoleKey.Enter, false, false, false);
+
+                    char c = (char)ch;
+                    var key = ConsoleKey.Enter;
+                    try { key = (ConsoleKey)Enum.Parse(typeof(ConsoleKey), char.ToUpper(c).ToString()); } catch { }
+                    return new ConsoleKeyInfo(c, key, false, false, false);
+                }
+                else
+                {
+                    return Console.ReadKey(intercept);
+                }
+            }
+            catch
+            {
+                return new ConsoleKeyInfo('\0', ConsoleKey.Enter, false, false, false);
+            }
         }
 
         private static string GetLocalVersion()
@@ -148,9 +178,9 @@ namespace GameUpdater
             
             try
             {
-                // 建立臨時目錄
+                // 建立臨時目錄（如存在，使用 CleanupTempFiles 以更穩健地移除）
                 if (Directory.Exists(TEMP_DOWNLOAD_PATH))
-                    Directory.Delete(TEMP_DOWNLOAD_PATH, true);
+                    CleanupTempFiles();
                 Directory.CreateDirectory(TEMP_DOWNLOAD_PATH);
 
                 // 步驟1: 下載新版本
@@ -174,7 +204,8 @@ namespace GameUpdater
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"\n❌ 更新失敗: {ex.Message}");
+                // 輸出完整例外以利除錯
+                Console.WriteLine($"\n❌ 更新失敗: {ex}");
                 Console.WriteLine("正在嘗試從備份還原...");
                 await RestoreFromBackup();
             }
@@ -295,18 +326,42 @@ namespace GameUpdater
                         
                         // 確保目標目錄存在
                         Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
-                        
-                        // 如果目標檔案存在且正在使用中，嘗試幾次
-                        for (int retry = 0; retry < 3; retry++)
+
+                        // 若來源是 Git LFS pointer，嘗試以 git-lfs 取得完整檔案並覆寫目標
+                        bool handledByLfs = false;
+                        try
                         {
-                            try
+                            if (IsGitLfsPointer(file))
                             {
-                                File.Copy(file, targetFile, true);
-                                break;
+                                lock (lfsLock)
+                                {
+                                    Console.WriteLine($"\n偵測到 LFS pointer：{relativePath}，嘗試以 git-lfs 取得完整檔...");
+                                    handledByLfs = EnsureLfsFileFromGit(REPO_GIT_URL, relativePath, targetFile);
+                                    if (!handledByLfs)
+                                        Console.WriteLine($"無法以 git-lfs 取得：{relativePath}，將以原始來源覆寫 pointer。");
+                                }
                             }
-                            catch (IOException) when (retry < 2)
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"\nLFS 取得發生例外: {ex.Message}");
+                        }
+
+                        // 如果未由 LFS 成功處理，則用來源檔案覆寫
+                        if (!handledByLfs)
+                        {
+                            // 如果目標檔案存在且正在使用中，嘗試幾次
+                            for (int retry = 0; retry < 3; retry++)
                             {
-                                Thread.Sleep(500); // 等待500ms後重試
+                                try
+                                {
+                                    File.Copy(file, targetFile, true);
+                                    break;
+                                }
+                                catch (IOException) when (retry < 2)
+                                {
+                                    Thread.Sleep(500); // 等待500ms後重試
+                                }
                             }
                         }
                         
@@ -384,14 +439,197 @@ namespace GameUpdater
 
         private static void CleanupTempFiles()
         {
+            if (!Directory.Exists(TEMP_DOWNLOAD_PATH))
+                return;
+
+            const int maxAttempts = 6;
+            int attempt = 0;
+            Exception? lastEx = null;
+
+            while (attempt < maxAttempts && Directory.Exists(TEMP_DOWNLOAD_PATH))
+            {
+                attempt++;
+                try
+                {
+                    // 移除所有檔案的 ReadOnly 屬性
+                    try
+                    {
+                        var files = Directory.GetFiles(TEMP_DOWNLOAD_PATH, "*", SearchOption.AllDirectories);
+                        foreach (var f in files)
+                        {
+                            try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+                        }
+                    }
+                    catch { }
+
+                    // 嘗試刪除整個目錄
+                    Directory.Delete(TEMP_DOWNLOAD_PATH, true);
+
+                    // 成功刪除則跳出
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    lastEx = ex;
+                    Console.WriteLine($"警告: 第 {attempt} 次嘗試刪除暫存資料夾失敗: {ex.Message}");
+
+                    // 列出無法刪除的檔案並嘗試開啟以檢查是否被鎖定
+                    try
+                    {
+                        var files = Directory.GetFiles(TEMP_DOWNLOAD_PATH, "*", SearchOption.AllDirectories);
+                        foreach (var f in files.Take(50)) // 列出最多 50 個做診斷
+                        {
+                            try
+                            {
+                                using (var fs = new FileStream(f, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                                {
+                                    // able to open exclusively
+                                }
+                            }
+                            catch (Exception openEx)
+                            {
+                                Console.WriteLine($"無法以獨占方式開啟: {f} -> {openEx.Message}");
+                            }
+                        }
+                    }
+                    catch (Exception listEx)
+                    {
+                        Console.WriteLine($"列出暫存檔案時發生錯誤: {listEx.Message}");
+                    }
+
+                    // 等待後重試（逐步增加等待時間）
+                    Thread.Sleep(250 * attempt);
+                }
+            }
+
+            if (Directory.Exists(TEMP_DOWNLOAD_PATH))
+            {
+                Console.WriteLine($"警告: 無法刪除暫存資料夾 {TEMP_DOWNLOAD_PATH}，最後例外: {lastEx?.Message}");
+            }
+        }
+
+        // 檢查檔案是否為 Git LFS pointer
+        private static bool IsGitLfsPointer(string filePath)
+        {
             try
             {
-                if (Directory.Exists(TEMP_DOWNLOAD_PATH))
-                    Directory.Delete(TEMP_DOWNLOAD_PATH, true);
+                using (var sr = new StreamReader(filePath))
+                {
+                    var firstLine = sr.ReadLine();
+                    return firstLine != null && firstLine.StartsWith("version https://git-lfs.github.com/spec/v1", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // 執行外部命令，回傳是否成功以及 stdout/stderr
+        private static bool RunProcess(string fileName, string arguments, string workingDirectory, out string stdOut, out string stdErr, int timeoutMs = 300000)
+        {
+            stdOut = string.Empty;
+            stdErr = string.Empty;
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    Arguments = arguments,
+                    WorkingDirectory = workingDirectory,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using (var proc = Process.Start(psi)!)
+                {
+                    var outTask = proc.StandardOutput.ReadToEndAsync();
+                    var errTask = proc.StandardError.ReadToEndAsync();
+                    if (!proc.WaitForExit(timeoutMs))
+                    {
+                        try { proc.Kill(); } catch { }
+                        stdErr = "Process timeout";
+                        return false;
+                    }
+
+                    stdOut = outTask.Result ?? string.Empty;
+                    stdErr = errTask.Result ?? string.Empty;
+                    return proc.ExitCode == 0;
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"\n警告: 清理臨時檔案失敗: {ex.Message}");
+                stdErr = ex.Message;
+                return false;
+            }
+        }
+
+        // 使用 git + git-lfs clone 並拉取特定檔案，然後複製到 destinationPath
+        // 回傳是否成功
+        private static bool EnsureLfsFileFromGit(string repoUrl, string relativePath, string destinationPath)
+        {
+            string clonePath = Path.Combine(TEMP_DOWNLOAD_PATH, "gitclone");
+
+            // 檢查 git 是否存在
+            if (!RunProcess("git", "--version", AppDomain.CurrentDomain.BaseDirectory, out var gvOut, out var gvErr))
+            {
+                Console.WriteLine($"無法找到 git: {gvErr}");
+                return false;
+            }
+
+            try
+            {
+                if (Directory.Exists(clonePath))
+                    Directory.Delete(clonePath, true);
+                Directory.CreateDirectory(clonePath);
+
+                Console.WriteLine($"正在以 git clone 取得 LFS 檔案（暫存於 {clonePath}）...");
+
+                // git clone --depth 1 <repo> <clonePath>
+                if (!RunProcess("git", $"clone --depth 1 {repoUrl} \"{clonePath}\"", TEMP_DOWNLOAD_PATH, out var cloneOut, out var cloneErr))
+                {
+                    Console.WriteLine($"git clone 失敗: {cloneErr}\n{cloneOut}");
+                    return false;
+                }
+
+                // 啟用 git lfs
+                RunProcess("git", "lfs install", clonePath, out var lfsInstallOut, out var lfsInstallErr);
+
+                // 把路徑轉成 Unix style for git lfs include
+                var includePath = relativePath.Replace("\\", "/");
+
+                // 嘗試直接 pull 指定檔案
+                if (!RunProcess("git", $"lfs pull --include=\"{includePath}\"", clonePath, out var pullOut, out var pullErr))
+                {
+                    // 如果 pull 失敗，嘗試 fetch + checkout
+                    Console.WriteLine($"git lfs pull 失敗，嘗試 fetch + checkout: {pullErr}");
+                    RunProcess("git", $"lfs fetch --include=\"{includePath}\" --all", clonePath, out var fetchOut, out var fetchErr);
+                    RunProcess("git", "lfs checkout", clonePath, out var coOut, out var coErr);
+                }
+
+                string sourceFile = Path.Combine(clonePath, relativePath);
+                if (!File.Exists(sourceFile))
+                {
+                    Console.WriteLine($"在 clone 的 repo 中找不到檔案: {sourceFile}");
+                    return false;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+                File.Copy(sourceFile, destinationPath, true);
+                Console.WriteLine($"已從 git-lfs 取得並覆寫: {destinationPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"嘗試從 git-lfs 取得檔案失敗: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                // 清理 clone 資料夾（保留以利除錯，這裡選擇刪除）
+                try { if (Directory.Exists(clonePath)) Directory.Delete(clonePath, true); } catch { }
             }
         }
 
@@ -449,19 +687,42 @@ namespace GameUpdater
         {
             lock (consoleLock)
             {
-                Console.CursorLeft = 0;
-                
-                // 繪製進度條
-                int barWidth = 40;
-                int filledWidth = (percentage * barWidth) / 100;
-                
-                Console.Write("[");
-                Console.Write(new string('█', filledWidth));
-                Console.Write(new string('░', barWidth - filledWidth));
-                Console.Write($"] {percentage:D3}% {message}");
-                
-                // 清除行尾多餘的字符
-                Console.Write(new string(' ', Math.Max(0, Console.WindowWidth - Console.CursorLeft - 1)));
+                try
+                {
+                    // 如果輸出被重導向（寫到檔案或管線），避免使用游標/視窗寬度操作
+                    if (Console.IsOutputRedirected)
+                    {
+                        Console.WriteLine($"[{percentage:D3}%] {message}");
+                        return;
+                    }
+
+                    Console.CursorLeft = 0;
+
+                    // 繪製進度條
+                    int barWidth = 40;
+                    int filledWidth = (percentage * barWidth) / 100;
+
+                    Console.Write("[");
+                    Console.Write(new string('█', filledWidth));
+                    Console.Write(new string('░', barWidth - filledWidth));
+                    Console.Write($"] {percentage:D3}% {message}");
+
+                    // 清除行尾多餘的字符（保護性 try）
+                    try
+                    {
+                        int remaining = Math.Max(0, Console.WindowWidth - Console.CursorLeft - 1);
+                        Console.Write(new string(' ', remaining));
+                    }
+                    catch
+                    {
+                        // 忽略在不支援 WindowWidth/游標操作時的錯誤
+                    }
+                }
+                catch (IOException)
+                {
+                    // 在某些環境（如重導向、沒有控制台）上，Console 屬性存取會失敗，改用簡單輸出
+                    Console.WriteLine($"[{percentage:D3}%] {message}");
+                }
             }
         }
     }
